@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Multinational Payment Platform - Design Patterns Demo</title>
+</head>
+<body>
+
+<h1>Multinational E-Commerce Payment Platform</h1>
+<p>
+This page talks to the Java back-end running on this machine to demonstrate
+three design patterns working together: <strong>Abstract Factory</strong>,
+<strong>Bridge</strong> and <strong>Adapter</strong>. Pick a country and a
+payment type below to see which regional factory, payment gateway and
+transaction type get selected automatically.
+</p>
+
+<h2>1. New Payment</h2>
+<form id="paymentForm">
+<table border="1" cellpadding="6">
+<tr>
+<td><label for="country">Country</label></td>
+<td>
+<select id="country" name="country">
+<option value="CO">Colombia (LATAM)</option>
+<option value="MX">Mexico (LATAM)</option>
+<option value="BR">Brazil (LATAM)</option>
+<option value="AR">Argentina (LATAM)</option>
+<option value="DE">Germany (EU)</option>
+<option value="FR">France (EU)</option>
+<option value="ES">Spain (EU)</option>
+<option value="IT">Italy (EU)</option>
+<option value="US">United States (US)</option>
+</select>
+</td>
+</tr>
+<tr>
+<td><label for="paymentType">Payment Type</label></td>
+<td>
+<select id="paymentType" name="paymentType">
+<option value="ONE_TIME">One-Time Payment</option>
+<option value="SUBSCRIPTION">Subscription Payment</option>
+</select>
+</td>
+</tr>
+<tr>
+<td><label for="amount">Amount</label></td>
+<td><input type="number" id="amount" name="amount" value="49.90" step="0.01" required></td>
+</tr>
+<tr>
+<td><label for="currency">Currency</label></td>
+<td><input type="text" id="currency" name="currency" value="USD" required></td>
+</tr>
+<tr>
+<td><label for="customerName">Customer Name</label></td>
+<td><input type="text" id="customerName" name="customerName" value="Jane Doe" required></td>
+</tr>
+<tr>
+<td><label for="customerEmail">Customer Email</label></td>
+<td><input type="email" id="customerEmail" name="customerEmail" value="jane@example.com" required></td>
+</tr>
+<tr>
+<td><label for="customerTaxId">Customer Tax ID (optional, triggers EU B2B reverse charge)</label></td>
+<td><input type="text" id="customerTaxId" name="customerTaxId" value=""></td>
+</tr>
+<tr>
+<td><label for="cardLast4">Card Last 4 Digits</label></td>
+<td><input type="text" id="cardLast4" name="cardLast4" value="4242" maxlength="4" required></td>
+</tr>
+<tr>
+<td><label for="subscriptionId">Subscription ID (only used for subscriptions)</label></td>
+<td><input type="text" id="subscriptionId" name="subscriptionId" value="SUB-0001"></td>
+</tr>
+</table>
+<p><button type="submit">Process Payment</button></p>
+</form>
+
+<h2>2. Result</h2>
+<div id="resultSummary">
+<p><em>No payment processed yet.</em></p>
+</div>
+
+<h3>Raw JSON response</h3>
+<pre id="resultRaw"></pre>
+
+<hr>
+
+<h2>About this demo</h2>
+<ul>
+<li><strong>Abstract Factory:</strong> the country you pick determines whether a LATAMPaymentFactory, EUPaymentFactory or USPaymentFactory is instantiated on the server.</li>
+<li><strong>Bridge:</strong> the Payment Type you pick determines whether a SubscriptionPayment or OneTimePayment abstraction is used, independently of the underlying gateway.</li>
+<li><strong>Adapter:</strong> the factory injects a MercadoPagoAdapter, StripeAdapter or LocalBankISOAdapter as the concrete PaymentGateway implementor, translating standard calls into each provider's own API.</li>
+</ul>
+
+<script>
+document.getElementById('paymentForm').addEventListener('submit', function (event) {
+    event.preventDefault();
+
+    var payload = {
+        country: document.getElementById('country').value,
+        paymentType: document.getElementById('paymentType').value,
+        amount: document.getElementById('amount').value,
+        currency: document.getElementById('currency').value,
+        customerId: 'CUST-' + Date.now(),
+        customerName: document.getElementById('customerName').value,
+        customerEmail: document.getElementById('customerEmail').value,
+        customerTaxId: document.getElementById('customerTaxId').value,
+        cardLast4: document.getElementById('cardLast4').value,
+        subscriptionId: document.getElementById('subscriptionId').value
+    };
+
+    fetch('/api/pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function (response) { return response.json(); })
+    .then(function (data) { renderResult(data); })
+    .catch(function (error) {
+        document.getElementById('resultSummary').innerHTML = '<p>Request failed: ' + error + '</p>';
+    });
+});
+
+function renderResult(data) {
+    if (data.error) {
+        document.getElementById('resultSummary').innerHTML = '<p>Error: ' + data.error + '</p>';
+        document.getElementById('resultRaw').textContent = JSON.stringify(data, null, 2);
+        return;
+    }
+
+    var html = '';
+    html += '<p><strong>Region detected:</strong> ' + data.region + '</p>';
+    html += '<p><strong>Factory used (Abstract Factory):</strong> ' + data.factoryUsed + '</p>';
+    html += '<p><strong>Gateway used (Adapter):</strong> ' + data.gatewayUsed + '</p>';
+    html += '<p><strong>Transaction type used (Bridge abstraction):</strong> ' + data.transactionTypeUsed + '</p>';
+    html += '<p><strong>Fraud check:</strong> ' + (data.fraudCheck.passed ? 'PASSED' : 'BLOCKED') +
+            ' (risk score ' + data.fraudCheck.riskScore + ') - ' + data.fraudCheck.reason + '</p>';
+
+    if (data.transaction) {
+        html += '<p><strong>Charge attempts:</strong> ' + data.transaction.attempts + '</p>';
+        html += '<p><strong>Transaction result:</strong> ' + (data.transaction.success ? 'SUCCESS' : 'FAILED') +
+                ' - ' + data.transaction.message + '</p>';
+        html += '<p><strong>Transaction ID:</strong> ' + data.transaction.transactionId + '</p>';
+    }
+
+    if (data.invoice) {
+        html += '<h3>Invoice</h3>';
+        html += '<p>Invoice ID: ' + data.invoice.invoiceId + '</p>';
+        html += '<p>Subtotal: ' + data.invoice.subtotal + ' ' + data.invoice.currency + '</p>';
+        html += '<p>Tax (' + data.invoice.taxLabel + '): ' + data.invoice.taxAmount + ' ' + data.invoice.currency + '</p>';
+        html += '<p>Total: ' + data.invoice.total + ' ' + data.invoice.currency + '</p>';
+    }
+
+    document.getElementById('resultSummary').innerHTML = html;
+    document.getElementById('resultRaw').textContent = JSON.stringify(data, null, 2);
+}
+</script>
+
+</body>
+</html>
